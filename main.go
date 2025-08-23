@@ -5,9 +5,15 @@ import (
 	"time"
 )
 
+const statusLed = machine.LED
+
+type Game struct {
+	players []Player
+}
+
 type Player struct {
-	car    Car
-	button Button
+	car    *Car
+	button *Button
 }
 
 type Car struct {
@@ -33,16 +39,31 @@ func blink(led machine.Pin) {
 	led.Low()
 }
 
+func (g *Game) processInputs() {
+	for _, p := range g.players {
+		if p.button.wasClicked() {
+			blink(statusLed)
+			p.car.increaseVel()
+		}
+	}
+}
+
 func main() {
-	led := machine.LED
-	button1 := NewButton(machine.D7)
-	car1 := NewCar("green")
-	led.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	game := Game{
+		players: []Player{
+			{
+				car:    NewCar("green"),
+				button: NewButton(machine.D7),
+			},
+			{
+				car:    NewCar("red"),
+				button: NewButton(machine.D8),
+			},
+		},
+	}
+	statusLed.Configure(machine.PinConfig{Mode: machine.PinOutput})
 
 	for {
-		if button1.wasClicked() {
-			blink(led)
-			car1.increaseVel()
-		}
+		game.processInputs()
 	}
 }
