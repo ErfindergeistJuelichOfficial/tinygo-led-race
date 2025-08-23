@@ -5,7 +5,12 @@ import (
 	"time"
 )
 
-const statusLed = machine.LED
+const (
+	STATUSLED    = machine.LED
+	MAX_SPEED    = 30.0
+	FRICTION     = 0.001
+	VEL_INCREASE = 1.0
+)
 
 type Game struct {
 	players []Player
@@ -17,20 +22,32 @@ type Player struct {
 }
 
 type Car struct {
-	velocity    int
 	playerColor string
+	pos         float32 // Position along LED strip
+	vel         float32 // Velocity (can be negative for reverse)
+	maxSpeed    float32 // Maximum speed
+	friction    float32 // Friction coefficient (0.0 - 1.0)
 }
 
-func NewCar(playerColor string) *Car {
+func NewCar(playerColor string, maxSpeed, friction float32) *Car {
 	return &Car{
+		pos:         0,
 		playerColor: playerColor,
-		velocity:    0,
+		vel:         0,
+		maxSpeed:    maxSpeed,
+		friction:    friction,
 	}
 }
 
-func (c *Car) increaseVel() {
-	c.velocity++
-	println(c.playerColor, ": ", c.velocity)
+func (c *Car) increaseVel(increase float32) {
+	c.vel += increase
+	// Limit maximum speed
+	if c.vel > c.maxSpeed {
+		c.vel = c.maxSpeed
+	} else if c.vel < -c.maxSpeed {
+		c.vel = -c.maxSpeed
+	}
+	println(c.playerColor, ": ", c.vel)
 }
 
 func blink(led machine.Pin) {
@@ -42,8 +59,26 @@ func blink(led machine.Pin) {
 func (g *Game) processInputs() {
 	for _, p := range g.players {
 		if p.button.wasClicked() {
-			blink(statusLed)
-			p.car.increaseVel()
+			blink(STATUSLED)
+			p.car.increaseVel(VEL_INCREASE)
+		}
+	}
+}
+
+func abs(x float32) float32 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// Apply friction (called every frame)
+func (g *Game) applyFriction() {
+	for _, p := range g.players {
+		p.car.vel -= p.car.friction
+		// Stop very slow movement to prevent jitter
+		if abs(p.car.vel) < 0.01 {
+			p.car.vel = 0
 		}
 	}
 }
@@ -52,18 +87,19 @@ func main() {
 	game := Game{
 		players: []Player{
 			{
-				car:    NewCar("green"),
+				car:    NewCar("green", MAX_SPEED, FRICTION),
 				button: NewButton(machine.D7),
 			},
 			{
-				car:    NewCar("red"),
+				car:    NewCar("red", MAX_SPEED, FRICTION),
 				button: NewButton(machine.D8),
 			},
 		},
 	}
-	statusLed.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	STATUSLED.Configure(machine.PinConfig{Mode: machine.PinOutput})
 
 	for {
 		game.processInputs()
+		game.applyFriction()
 	}
 }
