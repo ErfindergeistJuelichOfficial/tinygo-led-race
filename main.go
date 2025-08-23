@@ -15,21 +15,8 @@ type Car struct {
 	playerColor string
 }
 
-type Button struct {
-	pin        machine.Pin
-	wasPressed bool
-}
-
-func NewButton(pin machine.Pin) Button {
-	pin.Configure(machine.PinConfig{Mode: machine.PinInputPullup})
-	return Button{
-		pin:        pin,
-		wasPressed: false,
-	}
-}
-
-func NewCar(playerColor string) Car {
-	return Car{
+func NewCar(playerColor string) *Car {
+	return &Car{
 		playerColor: playerColor,
 		velocity:    0,
 	}
@@ -38,21 +25,6 @@ func NewCar(playerColor string) Car {
 func (c *Car) increaseVel() {
 	c.velocity++
 	println(c.playerColor, ": ", c.velocity)
-}
-
-func (b *Button) wasClicked() bool {
-	switch {
-	// Get() == false when pressed
-	case !b.pin.Get() && !b.wasPressed:
-		b.wasPressed = true
-		time.Sleep(time.Millisecond * 20)
-		return true
-	case b.pin.Get():
-		b.wasPressed = false
-		return false
-	default:
-		return false
-	}
 }
 
 func blink(led machine.Pin) {
