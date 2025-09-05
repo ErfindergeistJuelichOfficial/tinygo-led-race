@@ -1,12 +1,16 @@
 package main
 
 import (
+	"image/color"
 	"machine"
 	"time"
+
+	"tinygo.org/x/drivers/ws2812"
 )
 
 const (
 	STATUSLED    = machine.LED
+	ledPin       = machine.D2
 	MAX_SPEED    = 30.0
 	FRICTION     = 0.001
 	VEL_INCREASE = 1.0
@@ -98,8 +102,15 @@ func main() {
 	}
 	STATUSLED.Configure(machine.PinConfig{Mode: machine.PinOutput})
 
+	ledPin.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	ws := ws2812.New(ledPin)
 	for {
 		game.processInputs()
 		game.applyFriction()
+		leds := []color.RGBA{}
+		for i := range 60 {
+			leds = append(leds, color.RGBA{R: uint8(i), G: uint8(i), B: uint8(i)})
+		}
+		ws.WriteColors(leds)
 	}
 }
