@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	STATUSLED    = machine.LED
 	ledPin       = machine.D2
 	MAX_SPEED    = 30.0
 	FRICTION     = 0.001
@@ -18,6 +17,7 @@ const (
 
 type Game struct {
 	players []Player
+	strip   *LedStrip
 }
 
 type Player struct {
@@ -26,20 +26,45 @@ type Player struct {
 }
 
 type Car struct {
-	playerColor string
-	pos         float32 // Position along LED strip
-	vel         float32 // Velocity (can be negative for reverse)
-	maxSpeed    float32 // Maximum speed
+	name        string
+	playerColor color.RGBA
+	pos         int
+	vel         float32
+	maxSpeed    float32
 	friction    float32 // Friction coefficient (0.0 - 1.0)
 }
 
-func NewCar(playerColor string, maxSpeed, friction float32) *Car {
+type LedStrip struct {
+	numLeds int
+	device  ws2812.Device
+}
+
+func NewCar(name string, playerColor color.RGBA, maxSpeed, friction float32) *Car {
 	return &Car{
+		name:        name,
 		pos:         0,
 		playerColor: playerColor,
 		vel:         0,
 		maxSpeed:    maxSpeed,
 		friction:    friction,
+	}
+}
+
+func NewLedStrip(numLeds int) *LedStrip {
+	ledPin.Configure(machine.PinConfig{Mode: machine.PinOutput})
+	strip := &LedStrip{
+		numLeds: numLeds,
+		device:  ws2812.New(ledPin),
+	}
+	strip.reset()
+	return strip
+}
+
+func (l *LedStrip) reset() {
+	leds := []color.RGBA{}
+	for range l.numLeds {
+		leds = append(leds, color.RGBA{R: 0, G: 0, B: 0})
+		l.device.WriteColors(leds)
 	}
 }
 
@@ -51,7 +76,6 @@ func (c *Car) increaseVel(increase float32) {
 	} else if c.vel < -c.maxSpeed {
 		c.vel = -c.maxSpeed
 	}
-	println(c.playerColor, ": ", c.vel)
 }
 
 func blink(led machine.Pin) {
@@ -63,7 +87,8 @@ func blink(led machine.Pin) {
 func (g *Game) processInputs() {
 	for _, p := range g.players {
 		if p.button.wasClicked() {
-			blink(STATUSLED)
+			p.car.pos++
+			println(p.car.name, ": ", p.car.pos)
 			p.car.increaseVel(VEL_INCREASE)
 		}
 	}
@@ -87,30 +112,47 @@ func (g *Game) applyFriction() {
 	}
 }
 
+func haveSamePosition(players []Player) bool {
+	for i := 0; i < len(players); i++ {
+		for j := i + 1; j < len(players); j++ {
+			if players[i].car.pos == players[j].car.pos {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (g *Game) draw() {
+	leds := make([]color.RGBA, g.strip.numLeds)
+	if haveSamePosition(g.players) {
+		leds[g.players[0].car.pos] = color.RGBA{R: 255, G: 255, B: 255}
+	} else {
+		for _, p := range g.players {
+			leds[p.car.pos] = p.car.playerColor
+		}
+	}
+	g.strip.device.WriteColors(leds)
+}
+
 func main() {
 	game := Game{
+		strip: NewLedStrip(60 * 4),
 		players: []Player{
 			{
-				car:    NewCar("green", MAX_SPEED, FRICTION),
+				car:    NewCar("green", color.RGBA{R: 0, G: 255, B: 0}, MAX_SPEED, FRICTION),
 				button: NewButton(machine.D7),
 			},
 			{
-				car:    NewCar("red", MAX_SPEED, FRICTION),
+				car:    NewCar("red", color.RGBA{R: 255, G: 0, B: 0}, MAX_SPEED, FRICTION),
 				button: NewButton(machine.D8),
 			},
 		},
 	}
-	STATUSLED.Configure(machine.PinConfig{Mode: machine.PinOutput})
 
-	ledPin.Configure(machine.PinConfig{Mode: machine.PinOutput})
-	ws := ws2812.New(ledPin)
 	for {
 		game.processInputs()
 		game.applyFriction()
-		leds := []color.RGBA{}
-		for i := range 60 {
-			leds = append(leds, color.RGBA{R: uint8(i), G: uint8(i), B: uint8(i)})
-		}
-		ws.WriteColors(leds)
+		game.draw()
 	}
 }
