@@ -10,14 +10,24 @@ import (
 )
 
 const (
-	ledPin       = machine.D2
-	VEL_INCREASE = 20
-	AIRRES       = 0.02
+	ledPin         = machine.D2
+	VEL_INCREASE   = 10
+	AIRRES         = 0.02
+	MAX_BRIGHTNESS = 30
+	LAPS           = 5
+)
+
+type GameStatus int
+
+const (
+	Running GameStatus = iota
+	Finished
 )
 
 type Game struct {
 	players []Player
 	strip   *LedStrip
+	status  GameStatus
 }
 
 type Player struct {
@@ -26,7 +36,8 @@ type Player struct {
 }
 
 type Car struct {
-	name        string
+	name string
+	// FIXME put this on the player instead
 	playerColor color.RGBA
 	pos         float64
 	vel         float64
@@ -36,7 +47,7 @@ type Car struct {
 type LedStrip struct {
 	numLeds   int
 	device    ws2812.Device
-	occupancy map[int][]Car
+	occupancy [][]Car
 }
 
 func NewCar(name string, playerColor color.RGBA) *Car {
@@ -45,7 +56,7 @@ func NewCar(name string, playerColor color.RGBA) *Car {
 		pos:         0,
 		playerColor: playerColor,
 		vel:         0,
-		laps:        0,
+		laps:        1,
 	}
 }
 
@@ -54,7 +65,7 @@ func NewLedStrip(numLeds int) *LedStrip {
 	strip := &LedStrip{
 		numLeds:   numLeds,
 		device:    ws2812.New(ledPin),
-		occupancy: make(map[int][]Car),
+		occupancy: make([][]Car, numLeds),
 	}
 	strip.clear()
 	return strip
@@ -68,10 +79,20 @@ func (l *LedStrip) clear() {
 	l.device.WriteColors(leds)
 }
 
+func (l *LedStrip) illuminate(c color.RGBA) {
+	leds := []color.RGBA{}
+	for range l.numLeds {
+		leds = append(leds, c)
+	}
+	l.device.WriteColors(leds)
+	time.Sleep(3 * time.Second)
+}
+
 func (l *LedStrip) pulseWhite(repetitions int) {
 	const steps uint8 = 20
 	const delay = time.Millisecond * 50
 	for range repetitions {
+		time.Sleep(time.Millisecond * 1000)
 		for i := range steps {
 			leds := []color.RGBA{}
 			for range l.numLeds {
@@ -81,11 +102,32 @@ func (l *LedStrip) pulseWhite(repetitions int) {
 			time.Sleep(delay)
 		}
 		l.clear()
-		time.Sleep(time.Millisecond * 1000)
 	}
 }
 
-func (l *LedStrip) render() {
+func (l *LedStrip) render(cars []Car) {
+	leds := make([]color.RGBA, l.numLeds)
+	l.occupancy = make([][]Car, l.numLeds)
+	for _, c := range cars {
+		for i := range c.laps {
+			pos := int(c.pos) + i
+			if pos >= l.numLeds {
+				pos = pos % l.numLeds
+				l.occupancy[pos] = append(l.occupancy[pos], c)
+			} else {
+				l.occupancy[pos] = append(l.occupancy[pos], c)
+			}
+		}
+	}
+	for i, cars := range l.occupancy {
+		switch {
+		case len(cars) == 1:
+			leds[i] = cars[0].playerColor
+		case len(cars) > 1:
+			leds[i] = color.RGBA{R: MAX_BRIGHTNESS, G: MAX_BRIGHTNESS, B: MAX_BRIGHTNESS}
+		}
+	}
+	l.device.WriteColors(leds)
 }
 
 func (g *Game) processInputs() {
@@ -95,6 +137,11 @@ func (g *Game) processInputs() {
 			println(p.car.name, ": ", int(p.car.pos), p.car.vel)
 		}
 	}
+}
+
+func (g *Game) end(winner Player) {
+	g.status = Finished
+	g.strip.illuminate(winner.car.playerColor)
 }
 
 func (g *Game) calcNewPos(duration time.Duration) {
@@ -108,6 +155,9 @@ func (g *Game) calcNewPos(duration time.Duration) {
 		} else {
 			p.car.pos = newPos
 		}
+		if p.car.laps >= LAPS {
+			g.end(p)
+		}
 	}
 }
 
@@ -116,23 +166,28 @@ func main() {
 		strip: NewLedStrip(60 * 2),
 		players: []Player{
 			{
-				car:    NewCar("green", color.RGBA{R: 0, G: 255, B: 0}),
+				car:    NewCar("green", color.RGBA{R: 0, G: MAX_BRIGHTNESS, B: 0}),
 				button: NewButton(machine.D7),
 			},
 			{
-				car:    NewCar("red", color.RGBA{R: 255, G: 0, B: 0}),
+				car:    NewCar("red", color.RGBA{R: MAX_BRIGHTNESS, G: 0, B: 0}),
 				button: NewButton(machine.D8),
 			},
 		},
 	}
 
 	g.strip.pulseWhite(3)
+	g.status = Running
 
 	interval := 10 * time.Millisecond
-	for {
+	for g.status == Running {
 		g.processInputs()
 		g.calcNewPos(interval)
-		g.strip.render()
+		cars := []Car{}
+		for _, p := range g.players {
+			cars = append(cars, *p.car)
+		}
+		g.strip.render(cars)
 		time.Sleep(interval)
 	}
 }
