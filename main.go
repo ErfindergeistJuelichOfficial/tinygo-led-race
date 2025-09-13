@@ -133,7 +133,17 @@ func (l *LedStrip) render(cars []Car) {
 func (g *Game) processInputs() {
 	for _, p := range g.players {
 		if p.button.wasClicked() {
-			p.car.vel += VEL_INCREASE
+			newPos := p.car.pos + 1
+			if int(newPos) >= g.strip.numLeds {
+				p.car.laps++
+				p.car.pos = float64(int(newPos) % g.strip.numLeds)
+			} else {
+				p.car.pos = newPos
+			}
+			if p.car.laps >= LAPS {
+				g.end(p)
+			}
+			// p.car.vel += VEL_INCREASE
 			println(p.car.name, ": ", int(p.car.pos), p.car.vel)
 		}
 	}
@@ -163,10 +173,17 @@ func (g *Game) calcNewPos(duration time.Duration) {
 
 func main() {
 	g := Game{
-		strip: NewLedStrip(60 * 2),
+		strip: NewLedStrip(60 * 4),
 		players: []Player{
 			{
-				car:    NewCar("green", color.RGBA{R: 0, G: MAX_BRIGHTNESS, B: 0}),
+				car: NewCar(
+					"blue",
+					color.RGBA{
+						R: 0,
+						G: uint8(math.Round(0.49 * MAX_BRIGHTNESS)),
+						B: MAX_BRIGHTNESS,
+					},
+				),
 				button: NewButton(machine.D7),
 			},
 			{
@@ -182,7 +199,7 @@ func main() {
 	interval := 10 * time.Millisecond
 	for g.status == Running {
 		g.processInputs()
-		g.calcNewPos(interval)
+		// g.calcNewPos(interval)
 		cars := []Car{}
 		for _, p := range g.players {
 			cars = append(cars, *p.car)
