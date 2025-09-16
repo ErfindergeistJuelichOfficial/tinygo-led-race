@@ -14,20 +14,21 @@ const (
 	VEL_INCREASE   = 10
 	AIRRES         = 0.02
 	MAX_BRIGHTNESS = 30
-	LAPS           = 5
+	LAPS           = 2
 )
 
-type GameStatus int
+type GameState int
 
 const (
-	Running GameStatus = iota
+	Running GameState = iota
 	Finished
+	Waiting
 )
 
 type Game struct {
 	players []Player
 	strip   *LedStrip
-	status  GameStatus
+	state   GameState
 }
 
 type Player struct {
@@ -85,7 +86,7 @@ func (l *LedStrip) illuminate(c color.RGBA) {
 		leds = append(leds, c)
 	}
 	l.device.WriteColors(leds)
-	time.Sleep(3 * time.Second)
+	time.Sleep(1 * time.Second)
 }
 
 func (l *LedStrip) pulseWhite(repetitions int) {
@@ -131,27 +132,47 @@ func (l *LedStrip) render(cars []Car) {
 }
 
 func (g *Game) processInputs() {
-	for _, p := range g.players {
-		if p.button.wasClicked() {
-			newPos := p.car.pos + 1
-			if int(newPos) >= g.strip.numLeds {
-				p.car.laps++
-				p.car.pos = float64(int(newPos) % g.strip.numLeds)
-			} else {
-				p.car.pos = newPos
+	switch g.state {
+	case Running:
+		for _, p := range g.players {
+			if p.button.wasClicked() {
+				newPos := p.car.pos + 5
+				if int(newPos) >= g.strip.numLeds {
+					p.car.laps++
+					p.car.pos = float64(int(newPos) % g.strip.numLeds)
+				} else {
+					p.car.pos = newPos
+				}
+				if p.car.laps >= LAPS {
+					g.end(p)
+				}
+				// p.car.vel += VEL_INCREASE
+				println(p.car.name, ": ", int(p.car.pos), p.car.vel)
 			}
-			if p.car.laps >= LAPS {
-				g.end(p)
+		}
+	case Waiting:
+		for _, p := range g.players {
+			if p.button.wasClicked() {
+				g.start()
 			}
-			// p.car.vel += VEL_INCREASE
-			println(p.car.name, ": ", int(p.car.pos), p.car.vel)
 		}
 	}
 }
 
+func (g *Game) start() {
+	g.strip.pulseWhite(3)
+	g.state = Running
+}
+
 func (g *Game) end(winner Player) {
-	g.status = Finished
+	g.state = Finished
 	g.strip.illuminate(winner.car.playerColor)
+	for _, p := range g.players {
+		p.car.pos = 0
+		p.car.laps = 1
+		p.car.vel = 0
+	}
+	g.state = Waiting
 }
 
 func (g *Game) calcNewPos(duration time.Duration) {
@@ -193,18 +214,19 @@ func main() {
 		},
 	}
 
-	g.strip.pulseWhite(3)
-	g.status = Running
-
+	g.start()
 	interval := 10 * time.Millisecond
-	for g.status == Running {
+	for {
 		g.processInputs()
-		// g.calcNewPos(interval)
-		cars := []Car{}
-		for _, p := range g.players {
-			cars = append(cars, *p.car)
+		switch g.state {
+		case Running:
+			// g.calcNewPos(interval)
+			cars := []Car{}
+			for _, p := range g.players {
+				cars = append(cars, *p.car)
+			}
+			g.strip.render(cars)
 		}
-		g.strip.render(cars)
 		time.Sleep(interval)
 	}
 }
