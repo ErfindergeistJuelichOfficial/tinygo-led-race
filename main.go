@@ -37,12 +37,11 @@ type Player struct {
 }
 
 type Car struct {
-	name string
-	// FIXME put this on the player instead
-	playerColor color.RGBA
-	pos         float64
-	vel         float64
-	laps        int
+	name     string
+	carColor color.RGBA
+	pos      float64
+	vel      float64
+	laps     int
 }
 
 type LedStrip struct {
@@ -51,13 +50,13 @@ type LedStrip struct {
 	occupancy [][]Car
 }
 
-func NewCar(name string, playerColor color.RGBA) *Car {
+func NewCar(name string, carColor color.RGBA) *Car {
 	return &Car{
-		name:        name,
-		pos:         0,
-		playerColor: playerColor,
-		vel:         0,
-		laps:        1,
+		name:     name,
+		pos:      0,
+		carColor: carColor,
+		vel:      0,
+		laps:     1,
 	}
 }
 
@@ -123,7 +122,7 @@ func (l *LedStrip) render(cars []Car) {
 	for i, cars := range l.occupancy {
 		switch {
 		case len(cars) == 1:
-			leds[i] = cars[0].playerColor
+			leds[i] = cars[0].carColor
 		case len(cars) > 1:
 			leds[i] = color.RGBA{R: MAX_BRIGHTNESS, G: MAX_BRIGHTNESS, B: MAX_BRIGHTNESS}
 		}
@@ -166,7 +165,7 @@ func (g *Game) start() {
 
 func (g *Game) end(winner Player) {
 	g.state = Finished
-	g.strip.illuminate(winner.car.playerColor)
+	g.strip.illuminate(winner.car.carColor)
 	for _, p := range g.players {
 		p.car.pos = 0
 		p.car.laps = 1
