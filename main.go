@@ -12,8 +12,12 @@ import (
 const (
 	ledPin                      = machine.D2
 	ENERGY_INCREASE             = 100
+	STAMINA_MIN                 = .1
+	STAMINA_START               = 1.0
+	STAMINA_PRESS_LOSS          = .1
+	STAMINA_CONSTANT_GAIN       = .01
 	ENERGY_FACTOR               = 25
-	FRICTION_DECAY_FACTOR       = 0.95
+	FRICTION_DECAY_FACTOR       = .95
 	MAX_BRIGHTNESS        uint8 = 30
 	LAPS                        = 5
 )
@@ -43,6 +47,7 @@ type Car struct {
 	pos      float64
 	energy   float64
 	laps     int
+	stamina  float64
 }
 
 type LedStrip struct {
@@ -58,6 +63,31 @@ func NewCar(name string, carColor color.RGBA) *Car {
 		carColor: carColor,
 		energy:   0,
 		laps:     1,
+		stamina:  STAMINA_START,
+	}
+}
+
+func (c *Car) getStaminaColor() color.RGBA {
+	exhaustedR := float64(MAX_BRIGHTNESS) * .5
+	exhaustedG := float64(0) * .5
+	exhaustedB := float64(MAX_BRIGHTNESS) * .5
+	// Brightness scaling
+	baseR := float64(c.carColor.R) * c.stamina
+	baseG := float64(c.carColor.G) * c.stamina
+	baseB := float64(c.carColor.B) * c.stamina
+	var fadeFactor float64
+	if c.stamina < 0.8 {
+		fadeFactor = 1 - c.stamina/0.8
+	} else {
+		fadeFactor = 0
+	}
+	finalR := baseR*(1-fadeFactor) + exhaustedR*fadeFactor
+	finalG := baseG*(1-fadeFactor) + exhaustedG*fadeFactor
+	finalB := baseB*(1-fadeFactor) + exhaustedB*fadeFactor
+	return color.RGBA{
+		R: uint8(math.Round(finalR)),
+		G: uint8(math.Round(finalG)),
+		B: uint8(math.Round(finalB)),
 	}
 }
 
@@ -122,7 +152,7 @@ func (l *LedStrip) render(cars []Car) {
 	for i, cars := range l.occupancy {
 		switch {
 		case len(cars) == 1:
-			leds[i] = cars[0].carColor
+			leds[i] = cars[0].getStaminaColor()
 		case len(cars) > 1:
 			leds[i] = color.RGBA{R: MAX_BRIGHTNESS, G: MAX_BRIGHTNESS, B: MAX_BRIGHTNESS}
 		}
@@ -135,8 +165,9 @@ func (g *Game) processInputs() {
 	case Running:
 		for _, p := range g.players {
 			if p.button.wasClicked() {
-				p.car.energy += ENERGY_INCREASE
-				println(p.car.name, ": ", int(p.car.pos), p.car.energy)
+				p.car.stamina = math.Max(STAMINA_MIN, p.car.stamina-STAMINA_PRESS_LOSS)
+				p.car.energy += ENERGY_INCREASE * p.car.stamina
+				println(p.car.name, ": ", int(p.car.pos), p.car.energy, p.car.stamina)
 			}
 		}
 	case Waiting:
@@ -160,6 +191,7 @@ func (g *Game) end(winner Player) {
 		p.car.pos = 0
 		p.car.laps = 1
 		p.car.energy = 0
+		p.car.stamina = STAMINA_START
 	}
 	g.state = Waiting
 }
@@ -212,6 +244,7 @@ func main() {
 			cars := []Car{}
 			for _, p := range g.players {
 				cars = append(cars, *p.car)
+				p.car.stamina = math.Min(STAMINA_START, p.car.stamina+STAMINA_CONSTANT_GAIN)
 			}
 			g.strip.render(cars)
 			g.calcNewPos(interval)
