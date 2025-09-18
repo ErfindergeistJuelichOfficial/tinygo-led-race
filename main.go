@@ -10,11 +10,12 @@ import (
 )
 
 const (
-	ledPin         = machine.D2
-	VEL_INCREASE   = 10
-	AIRRES         = 0.02
-	MAX_BRIGHTNESS = 30
-	LAPS           = 2
+	ledPin                      = machine.D2
+	ENERGY_INCREASE             = 100
+	ENERGY_FACTOR               = 25
+	FRICTION_DECAY_FACTOR       = 0.95
+	MAX_BRIGHTNESS        uint8 = 30
+	LAPS                        = 5
 )
 
 type GameState int
@@ -40,7 +41,7 @@ type Car struct {
 	name     string
 	carColor color.RGBA
 	pos      float64
-	vel      float64
+	energy   float64
 	laps     int
 }
 
@@ -55,7 +56,7 @@ func NewCar(name string, carColor color.RGBA) *Car {
 		name:     name,
 		pos:      0,
 		carColor: carColor,
-		vel:      0,
+		energy:   0,
 		laps:     1,
 	}
 }
@@ -89,11 +90,10 @@ func (l *LedStrip) illuminate(c color.RGBA) {
 }
 
 func (l *LedStrip) pulseWhite(repetitions int) {
-	const steps uint8 = 20
-	const delay = time.Millisecond * 50
+	const delay = time.Millisecond * 10
 	for range repetitions {
 		time.Sleep(time.Millisecond * 1000)
-		for i := range steps {
+		for i := range MAX_BRIGHTNESS {
 			leds := []color.RGBA{}
 			for range l.numLeds {
 				leds = append(leds, color.RGBA{R: i, G: i, B: i})
@@ -135,18 +135,8 @@ func (g *Game) processInputs() {
 	case Running:
 		for _, p := range g.players {
 			if p.button.wasClicked() {
-				newPos := p.car.pos + 5
-				if int(newPos) >= g.strip.numLeds {
-					p.car.laps++
-					p.car.pos = float64(int(newPos) % g.strip.numLeds)
-				} else {
-					p.car.pos = newPos
-				}
-				if p.car.laps >= LAPS {
-					g.end(p)
-				}
-				// p.car.vel += VEL_INCREASE
-				println(p.car.name, ": ", int(p.car.pos), p.car.vel)
+				p.car.energy += ENERGY_INCREASE
+				println(p.car.name, ": ", int(p.car.pos), p.car.energy)
 			}
 		}
 	case Waiting:
@@ -169,16 +159,16 @@ func (g *Game) end(winner Player) {
 	for _, p := range g.players {
 		p.car.pos = 0
 		p.car.laps = 1
-		p.car.vel = 0
+		p.car.energy = 0
 	}
 	g.state = Waiting
 }
 
 func (g *Game) calcNewPos(duration time.Duration) {
 	for _, p := range g.players {
-		a := -AIRRES * math.Pow(p.car.vel, 2)
-		p.car.vel = p.car.vel + a*duration.Seconds()
-		newPos := p.car.pos + p.car.vel*duration.Seconds()
+		p.car.energy *= FRICTION_DECAY_FACTOR
+		vel := math.Sqrt(math.Max(0, p.car.energy) * ENERGY_FACTOR)
+		newPos := p.car.pos + vel*duration.Seconds()
 		if int(newPos) >= g.strip.numLeds {
 			p.car.laps++
 			p.car.pos = float64(int(newPos) % g.strip.numLeds)
@@ -200,7 +190,7 @@ func main() {
 					"blue",
 					color.RGBA{
 						R: 0,
-						G: uint8(math.Round(0.49 * MAX_BRIGHTNESS)),
+						G: uint8(math.Round(0.49 * float64(MAX_BRIGHTNESS))),
 						B: MAX_BRIGHTNESS,
 					},
 				),
@@ -219,12 +209,12 @@ func main() {
 		g.processInputs()
 		switch g.state {
 		case Running:
-			// g.calcNewPos(interval)
 			cars := []Car{}
 			for _, p := range g.players {
 				cars = append(cars, *p.car)
 			}
 			g.strip.render(cars)
+			g.calcNewPos(interval)
 		}
 		time.Sleep(interval)
 	}
