@@ -155,18 +155,21 @@ func (l *LedStrip) illuminate(c color.RGBA) {
 	time.Sleep(1 * time.Second)
 }
 
-func (l *LedStrip) pulseWhite(repetitions int) {
-	const delay = time.Millisecond * 10
-	for range repetitions {
-		time.Sleep(time.Millisecond * 1000)
-		for i := range uint8(MAX_BRIGHTNESS * BRIGHTNESS_FACTOR) {
-			leds := []color.RGBA{}
-			for range l.numLeds {
-				leds = append(leds, color.RGBA{R: i, G: i, B: i})
-			}
-			l.device.WriteColors(leds)
-			time.Sleep(delay)
+func (l *LedStrip) pulseStart() {
+	max_color := uint8(MAX_BRIGHTNESS * BRIGHTNESS_FACTOR)
+	colors := []color.RGBA{
+		{R: max_color, G: 0, B: 0},
+		{R: max_color, G: max_color, B: 0},
+		{R: 0, G: max_color, B: 0},
+	}
+	for _, c := range colors {
+		time.Sleep(time.Second)
+		leds := []color.RGBA{}
+		for range l.numLeds {
+			leds = append(leds, c)
 		}
+		l.device.WriteColors(leds)
+		time.Sleep(time.Second)
 		l.clear()
 	}
 }
@@ -251,7 +254,7 @@ func (g *Game) processInputs() {
 }
 
 func (g *Game) start() {
-	g.strip.pulseWhite(3)
+	g.strip.pulseStart()
 	g.state = Running
 }
 
