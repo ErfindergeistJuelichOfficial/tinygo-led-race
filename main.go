@@ -56,8 +56,8 @@ type Zone struct {
 
 func NewZone() Zone {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	l := 8
-	return Zone{start: r.Intn(NUM_LEDS - l), length: l, zoneType: ZoneBoost}
+	// zone length indicates the number of laps required to win
+	return Zone{start: r.Intn(NUM_LEDS - LAPS), length: LAPS, zoneType: ZoneBoost}
 }
 
 type Cell struct {
@@ -200,9 +200,9 @@ func (l *LedStrip) render(cars []Car, zone Zone) {
 			switch cell.Zone {
 			case ZoneBoost:
 				leds[i] = color.RGBA{
-					R: uint8(math.Round(MAX_BRIGHTNESS * BRIGHTNESS_FACTOR * 0.05)),
-					G: 0,
-					B: uint8(math.Round(MAX_BRIGHTNESS * BRIGHTNESS_FACTOR * 0.05)),
+					R: 0,
+					G: uint8(math.Round(MAX_BRIGHTNESS * BRIGHTNESS_FACTOR)),
+					B: 0,
 				}
 			default:
 				leds[i] = color.RGBA{0, 0, 0, 0}
@@ -238,7 +238,7 @@ func (g *Game) processInputs() {
 				)
 			}
 		}
-		if g.totalPresses == 200 {
+		if g.totalPresses == 120 {
 			g.zone = NewZone()
 		}
 	case Waiting:
@@ -259,7 +259,9 @@ func (g *Game) end(winner Player) {
 	g.state = Finished
 	g.strip.illuminate(winner.car.carColor)
 	g.zone = NewZone()
-	for _, p := range g.players {
+	g.totalPresses = 0
+	for i := range g.players {
+		p := &g.players[i]
 		p.car.pos = 0
 		p.car.laps = 1
 		p.car.energy = 0
@@ -276,7 +278,7 @@ func (g *Game) calcNewPos(duration time.Duration) {
 		newPos := p.car.pos + vel*duration.Seconds()
 		// check if in zone
 		if int(newPos) >= g.zone.start && int(newPos) < g.zone.start+g.zone.length &&
-			p.car.stamina < 0.2 {
+			p.car.energy < 50 {
 			p.car.energy += 3000
 			p.car.stamina = STAMINA_START
 		}
