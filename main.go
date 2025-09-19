@@ -10,16 +10,17 @@ import (
 )
 
 const (
-	ledPin                      = machine.D2
-	ENERGY_INCREASE             = 100
-	STAMINA_MIN                 = .1
-	STAMINA_START               = 1.0
-	STAMINA_PRESS_LOSS          = .1
-	STAMINA_CONSTANT_GAIN       = .01
-	ENERGY_FACTOR               = 25
-	FRICTION_DECAY_FACTOR       = .95
-	MAX_BRIGHTNESS        uint8 = 30
-	LAPS                        = 5
+	ledPin                = machine.D2
+	ENERGY_INCREASE       = 100
+	STAMINA_MIN           = .1
+	STAMINA_START         = 1.0
+	STAMINA_PRESS_LOSS    = .1
+	STAMINA_CONSTANT_GAIN = .01
+	ENERGY_FACTOR         = 25
+	FRICTION_DECAY_FACTOR = .95
+	MAX_BRIGHTNESS        = 255
+	BRIGHTNESS_FACTOR     = .2
+	LAPS                  = 5
 )
 
 type GameState int
@@ -68,22 +69,28 @@ func NewCar(name string, carColor color.RGBA) *Car {
 }
 
 func (c *Car) getStaminaColor() color.RGBA {
-	exhaustedR := float64(MAX_BRIGHTNESS) * .5
-	exhaustedG := float64(0) * .5
-	exhaustedB := float64(MAX_BRIGHTNESS) * .5
-	// Brightness scaling
-	baseR := float64(c.carColor.R) * c.stamina
-	baseG := float64(c.carColor.G) * c.stamina
-	baseB := float64(c.carColor.B) * c.stamina
+	exhaustedR := float64(MAX_BRIGHTNESS)
+	exhaustedG := 0.0
+	exhaustedB := float64(MAX_BRIGHTNESS)
 	var fadeFactor float64
 	if c.stamina < 0.8 {
 		fadeFactor = 1 - c.stamina/0.8
 	} else {
 		fadeFactor = 0
 	}
-	finalR := baseR*(1-fadeFactor) + exhaustedR*fadeFactor
-	finalG := baseG*(1-fadeFactor) + exhaustedG*fadeFactor
-	finalB := baseB*(1-fadeFactor) + exhaustedB*fadeFactor
+	finalR := (float64(c.carColor.R)*(1-fadeFactor) + exhaustedR*fadeFactor) * BRIGHTNESS_FACTOR * math.Pow(
+		c.stamina,
+		2,
+	)
+	finalG := (float64(c.carColor.G)*(1-fadeFactor) + exhaustedG*fadeFactor) * BRIGHTNESS_FACTOR * math.Pow(
+		c.stamina,
+		2,
+	)
+	finalB := (float64(c.carColor.B)*(1-fadeFactor) + exhaustedB*fadeFactor) * BRIGHTNESS_FACTOR * math.Pow(
+		c.stamina,
+		2,
+	)
+
 	return color.RGBA{
 		R: uint8(math.Round(finalR)),
 		G: uint8(math.Round(finalG)),
@@ -123,7 +130,7 @@ func (l *LedStrip) pulseWhite(repetitions int) {
 	const delay = time.Millisecond * 10
 	for range repetitions {
 		time.Sleep(time.Millisecond * 1000)
-		for i := range MAX_BRIGHTNESS {
+		for i := range uint8(MAX_BRIGHTNESS * BRIGHTNESS_FACTOR) {
 			leds := []color.RGBA{}
 			for range l.numLeds {
 				leds = append(leds, color.RGBA{R: i, G: i, B: i})
@@ -154,7 +161,8 @@ func (l *LedStrip) render(cars []Car) {
 		case len(cars) == 1:
 			leds[i] = cars[0].getStaminaColor()
 		case len(cars) > 1:
-			leds[i] = color.RGBA{R: MAX_BRIGHTNESS, G: MAX_BRIGHTNESS, B: MAX_BRIGHTNESS}
+			b := uint8(MAX_BRIGHTNESS * BRIGHTNESS_FACTOR)
+			leds[i] = color.RGBA{R: b, G: b, B: b}
 		}
 	}
 	l.device.WriteColors(leds)
@@ -222,7 +230,7 @@ func main() {
 					"blue",
 					color.RGBA{
 						R: 0,
-						G: uint8(math.Round(0.49 * float64(MAX_BRIGHTNESS))),
+						G: uint8(math.Round(0.49 * MAX_BRIGHTNESS)),
 						B: MAX_BRIGHTNESS,
 					},
 				),
