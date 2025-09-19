@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"machine"
 	"math"
+	"math/rand"
 	"time"
 
 	"tinygo.org/x/drivers/ws2812"
@@ -11,6 +12,7 @@ import (
 
 const (
 	ledPin                = machine.D2
+	NUM_LEDS              = 4 * 60
 	ENERGY_INCREASE       = 100
 	STAMINA_MIN           = .1
 	STAMINA_START         = 1.0
@@ -31,15 +33,42 @@ const (
 	Waiting
 )
 
+type ZoneType int
+
+const (
+	ZoneBoost ZoneType = iota
+	ZoneNone
+)
+
 type Game struct {
-	players []Player
-	strip   *LedStrip
-	state   GameState
+	players      []Player
+	strip        *LedStrip
+	state        GameState
+	zone         Zone
+	totalPresses int
+}
+
+type Zone struct {
+	start    int
+	length   int
+	zoneType ZoneType
+}
+
+func NewZone() Zone {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	l := 8
+	return Zone{start: r.Intn(NUM_LEDS - l), length: l, zoneType: ZoneBoost}
+}
+
+type Cell struct {
+	cars []*Car
+	Zone ZoneType
 }
 
 type Player struct {
-	car    *Car
-	button *Button
+	car           *Car
+	button        *Button
+	buttonPresses int
 }
 
 type Car struct {
@@ -54,7 +83,7 @@ type Car struct {
 type LedStrip struct {
 	numLeds   int
 	device    ws2812.Device
-	occupancy [][]Car
+	occupancy []*Cell
 }
 
 func NewCar(name string, carColor color.RGBA) *Car {
@@ -98,12 +127,12 @@ func (c *Car) getStaminaColor() color.RGBA {
 	}
 }
 
-func NewLedStrip(numLeds int) *LedStrip {
+func NewLedStrip() *LedStrip {
 	ledPin.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	strip := &LedStrip{
-		numLeds:   numLeds,
+		numLeds:   NUM_LEDS,
 		device:    ws2812.New(ledPin),
-		occupancy: make([][]Car, numLeds),
+		occupancy: make([]*Cell, NUM_LEDS),
 	}
 	strip.clear()
 	return strip
@@ -142,25 +171,45 @@ func (l *LedStrip) pulseWhite(repetitions int) {
 	}
 }
 
-func (l *LedStrip) render(cars []Car) {
+func (l *LedStrip) render(cars []Car, zone Zone) {
 	leds := make([]color.RGBA, l.numLeds)
-	l.occupancy = make([][]Car, l.numLeds)
-	for _, c := range cars {
-		for i := range c.laps {
+	l.occupancy = make([]*Cell, l.numLeds)
+	for i := range l.occupancy {
+		zType := ZoneNone
+		if i >= zone.start && i < zone.start+zone.length {
+			zType = zone.zoneType
+		}
+		l.occupancy[i] = &Cell{
+			cars: []*Car{},
+			Zone: zType,
+		}
+	}
+	for idx := range cars {
+		c := &cars[idx]
+		for i := 0; i < c.laps; i++ {
 			pos := int(c.pos) + i
 			if pos >= l.numLeds {
 				pos = pos % l.numLeds
-				l.occupancy[pos] = append(l.occupancy[pos], c)
-			} else {
-				l.occupancy[pos] = append(l.occupancy[pos], c)
 			}
+			l.occupancy[pos].cars = append(l.occupancy[pos].cars, c)
 		}
 	}
-	for i, cars := range l.occupancy {
-		switch {
-		case len(cars) == 1:
-			leds[i] = cars[0].getStaminaColor()
-		case len(cars) > 1:
+	for i, cell := range l.occupancy {
+		switch len(cell.cars) {
+		case 0:
+			switch cell.Zone {
+			case ZoneBoost:
+				leds[i] = color.RGBA{
+					R: uint8(math.Round(MAX_BRIGHTNESS * BRIGHTNESS_FACTOR * 0.05)),
+					G: 0,
+					B: uint8(math.Round(MAX_BRIGHTNESS * BRIGHTNESS_FACTOR * 0.05)),
+				}
+			default:
+				leds[i] = color.RGBA{0, 0, 0, 0}
+			}
+		case 1:
+			leds[i] = cell.cars[0].getStaminaColor()
+		default:
 			b := uint8(MAX_BRIGHTNESS * BRIGHTNESS_FACTOR)
 			leds[i] = color.RGBA{R: b, G: b, B: b}
 		}
@@ -171,12 +220,26 @@ func (l *LedStrip) render(cars []Car) {
 func (g *Game) processInputs() {
 	switch g.state {
 	case Running:
-		for _, p := range g.players {
+		for i := range g.players {
+			p := &g.players[i]
 			if p.button.wasClicked() {
 				p.car.stamina = math.Max(STAMINA_MIN, p.car.stamina-STAMINA_PRESS_LOSS)
 				p.car.energy += ENERGY_INCREASE * p.car.stamina
-				println(p.car.name, ": ", int(p.car.pos), p.car.energy, p.car.stamina)
+				p.buttonPresses++
+				g.totalPresses++
+				println(
+					p.car.name,
+					": ",
+					int(p.car.pos),
+					p.car.energy,
+					p.car.stamina,
+					p.buttonPresses,
+					g.totalPresses,
+				)
 			}
+		}
+		if g.totalPresses == 200 {
+			g.zone = NewZone()
 		}
 	case Waiting:
 		for _, p := range g.players {
@@ -195,10 +258,12 @@ func (g *Game) start() {
 func (g *Game) end(winner Player) {
 	g.state = Finished
 	g.strip.illuminate(winner.car.carColor)
+	g.zone = NewZone()
 	for _, p := range g.players {
 		p.car.pos = 0
 		p.car.laps = 1
 		p.car.energy = 0
+		p.buttonPresses = 0
 		p.car.stamina = STAMINA_START
 	}
 	g.state = Waiting
@@ -209,6 +274,13 @@ func (g *Game) calcNewPos(duration time.Duration) {
 		p.car.energy *= FRICTION_DECAY_FACTOR
 		vel := math.Sqrt(math.Max(0, p.car.energy) * ENERGY_FACTOR)
 		newPos := p.car.pos + vel*duration.Seconds()
+		// check if in zone
+		if int(newPos) >= g.zone.start && int(newPos) < g.zone.start+g.zone.length &&
+			p.car.stamina < 0.2 {
+			p.car.energy += 3000
+			p.car.stamina = STAMINA_START
+		}
+		// calculate new position
 		if int(newPos) >= g.strip.numLeds {
 			p.car.laps++
 			p.car.pos = float64(int(newPos) % g.strip.numLeds)
@@ -223,7 +295,8 @@ func (g *Game) calcNewPos(duration time.Duration) {
 
 func main() {
 	g := Game{
-		strip: NewLedStrip(60 * 4),
+		strip: NewLedStrip(),
+		zone:  NewZone(),
 		players: []Player{
 			{
 				car: NewCar(
@@ -254,7 +327,7 @@ func main() {
 				cars = append(cars, *p.car)
 				p.car.stamina = math.Min(STAMINA_START, p.car.stamina+STAMINA_CONSTANT_GAIN)
 			}
-			g.strip.render(cars)
+			g.strip.render(cars, g.zone)
 			g.calcNewPos(interval)
 		}
 		time.Sleep(interval)
