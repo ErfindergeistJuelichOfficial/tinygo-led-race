@@ -2,10 +2,17 @@
 
 A competitive 1D racing game designed for microcontrollers using TinyGo, where players control cars racing along an LED strip using button inputs.
 
+
+
+https://github.com/user-attachments/assets/e2524f9e-ce13-42a1-930f-70229a477dff
+
+
+
 ## Features
 
 - **1D LED Strip Racing**: Fast-paced racing action displayed on a single LED strip
 - **Stamina System**: Strategic gameplay balancing speed vs. endurance
+- **Speed zones**: Get a boost when driving slow through a speed zone
 - **Visual Feedback**: Car colors fade to purple as stamina depletes
 
 ## Game Mechanics
@@ -23,6 +30,13 @@ Players must balance speed with endurance:
 - **Medium Stamina**: Car brightness dims proportionally
 - **Low Stamina**: Car color fades toward purple, indicating exhaustion
 - **Recovery**: Stamina regenerates slowly when not pressing buttons
+
+### Speed zone
+Get a boost when driving through a zone marked by green LEDs
+- Drive slow enough over the green LEDs to receive a boost
+- Nothing happens if you're too fast
+- The zone is spawned at a random position at the beginning
+- The zone randomly changes the position during the game
 
 This creates strategic depth where players must decide when to sprint and when to coast.
 
