@@ -40,6 +40,11 @@ Get a boost when driving through a zone marked by green LEDs
 
 This creates strategic depth where players must decide when to sprint and when to coast.
 
+### Demo Mode
+When no buttons are pressed for 30 seconds, the game enters demo mode:
+- Cars race autonomously with simulated button presses
+- Press any button to exit demo mode and start a new race
+
 ## Installation
 
 ### Prerequisites

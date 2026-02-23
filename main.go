@@ -23,6 +23,7 @@ const (
 	MAX_BRIGHTNESS        = 255
 	BRIGHTNESS_FACTOR     = .2
 	LAPS                  = 5
+	IDLE_TIMEOUT          = 30 * time.Second
 )
 
 type GameState int
@@ -31,6 +32,7 @@ const (
 	Running GameState = iota
 	Finished
 	Waiting
+	Demo
 )
 
 type ZoneType int
@@ -46,6 +48,8 @@ type Game struct {
 	state        GameState
 	zone         Zone
 	totalPresses int
+	lastActivity time.Time
+	rng          *rand.Rand
 }
 
 type Zone struct {
@@ -247,9 +251,24 @@ func (g *Game) processInputs() {
 	case Waiting:
 		for _, p := range g.players {
 			if p.button.wasClicked() {
+				g.lastActivity = time.Now()
 				g.start()
+				return
 			}
 		}
+		if time.Since(g.lastActivity) > IDLE_TIMEOUT {
+			g.startDemo()
+		}
+	case Demo:
+		for _, p := range g.players {
+			if p.button.wasClicked() {
+				g.resetCars()
+				g.lastActivity = time.Now()
+				g.start()
+				return
+			}
+		}
+		g.simulateDemoInputs()
 	}
 }
 
@@ -258,9 +277,13 @@ func (g *Game) start() {
 	g.state = Running
 }
 
-func (g *Game) end(winner Player) {
-	g.state = Finished
-	g.strip.illuminate(winner.car.carColor)
+func (g *Game) startDemo() {
+	g.resetCars()
+	g.strip.pulseStart()
+	g.state = Demo
+}
+
+func (g *Game) resetCars() {
 	g.zone = NewZone()
 	g.totalPresses = 0
 	for i := range g.players {
@@ -271,7 +294,34 @@ func (g *Game) end(winner Player) {
 		p.buttonPresses = 0
 		p.car.stamina = STAMINA_START
 	}
-	g.state = Waiting
+}
+
+func (g *Game) simulateDemoInputs() {
+	for i := range g.players {
+		p := &g.players[i]
+		if g.rng.Intn(100) < 8 {
+			p.car.stamina = math.Max(STAMINA_MIN, p.car.stamina-STAMINA_PRESS_LOSS)
+			p.car.energy += ENERGY_INCREASE * p.car.stamina
+			p.buttonPresses++
+			g.totalPresses++
+		}
+	}
+	if g.totalPresses == 120 {
+		g.zone = NewZone()
+	}
+}
+
+func (g *Game) end(winner Player) {
+	wasDemo := g.state == Demo
+	g.state = Finished
+	g.strip.illuminate(winner.car.carColor)
+	g.resetCars()
+	if wasDemo {
+		g.state = Demo
+	} else {
+		g.state = Waiting
+		g.lastActivity = time.Now()
+	}
 }
 
 func (g *Game) calcNewPos(duration time.Duration) {
@@ -300,8 +350,10 @@ func (g *Game) calcNewPos(duration time.Duration) {
 
 func main() {
 	g := Game{
-		strip: NewLedStrip(),
-		zone:  NewZone(),
+		strip:        NewLedStrip(),
+		zone:         NewZone(),
+		lastActivity: time.Now(),
+		rng:          rand.New(rand.NewSource(time.Now().UnixNano())),
 		players: []Player{
 			{
 				car: NewCar(
@@ -321,12 +373,12 @@ func main() {
 		},
 	}
 
-	g.start()
+	g.state = Waiting
 	interval := 10 * time.Millisecond
 	for {
 		g.processInputs()
 		switch g.state {
-		case Running:
+		case Running, Demo:
 			cars := []Car{}
 			for _, p := range g.players {
 				cars = append(cars, *p.car)
